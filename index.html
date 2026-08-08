@@ -43,7 +43,10 @@
     .alarm-check { margin-right: 8px; width: 16px; height: 16px; accent-color: #d4af37; }
     .empty-tip { text-align: center; color: #bbb; padding: 20px; font-size: 14px; }
     .notify-status { font-size: 12px; color: #d4af37; text-align: center; margin-top: 12px; }
+    .test-area { text-align: center; margin-top: 10px; }
+    .btn-test { background: #d4af37; color: #222; font-size: 13px; padding: 6px 16px; border-radius: 8px; border: none; cursor: pointer; }
     .tip-text { font-size: 12px; color: #aaa; text-align: center; margin-top: 16px; }
+    .debug-info { font-size: 11px; color: #aaa; text-align: center; margin-top: 8px; }
     .help-card {
       background: #fff; border-radius: 16px; padding: 16px 20px; margin-top: 20px;
       border: 1px solid #eee; font-size: 13px; color: #666; line-height: 1.8;
@@ -72,6 +75,10 @@
 <div id="regions-container"></div>
 <div class="tip-text">💡 提醒将通过浏览器通知弹出（请允许通知）</div>
 <div class="notify-status" id="notifyStatus"></div>
+<div class="test-area">
+  <button class="btn-test" onclick="testNotification()">🧪 发送测试通知</button>
+</div>
+<div class="debug-info" id="debugInfo"></div>
 
 <!-- 使用说明 -->
 <div class="help-card">
@@ -91,14 +98,14 @@
   // ==================== 配置 ====================
   const SEASON_END = new Date(2026, 8, 2).getTime(); // 2026.9.2 00:00
   const weekNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-  const weekOrder = [1, 2, 3, 4, 5, 6, 0]; // 显示顺序：周一~周日
+  const weekOrder = [1, 2, 3, 4, 5, 6, 0];
 
   let alarmIdCounter = 0;
   function createAlarm(t, m, enabled = true) {
     return { id: ++alarmIdCounter, t, m, enabled };
   }
 
-  // 定山河/弱水三千闹钟（10:00报名boss，周日新增18:55城战）
+  // 定山河/弱水三千闹钟
   function buildAlarms() {
     const a = {0:[],1:[],2:[],3:[],4:[],5:[],6:[]};
     [1,2].forEach(d => {
@@ -132,14 +139,13 @@
     return a;
   }
 
-  // 初始数据
   let regions = [
     { id: 'dingshanhe', name: '定山河', enabled: false, duration: '', alarms: buildAlarms() },
     { id: 'ruoshui', name: '弱水三千', enabled: true, duration: '2026.7.8 - 2026.9.1', alarms: buildAlarms() },
     { id: 'mirror', name: '镜像服', enabled: false, duration: '', alarms: buildMirrorAlarms() }
   ];
 
-  // 从本地存储恢复状态（修复：不再使用 map 处理对象）
+  // 从本地存储恢复状态
   try {
     const saved = localStorage.getItem('regions_full');
     if (saved) {
@@ -149,16 +155,13 @@
         if (found) {
           r.enabled = found.enabled;
           if (found.alarms && typeof found.alarms === 'object' && !Array.isArray(found.alarms)) {
-            // 正确恢复每个闹钟的 enabled 状态
             for (let day in r.alarms) {
               const dayAlarms = r.alarms[day];
               const savedDay = found.alarms[day];
               if (savedDay && Array.isArray(savedDay)) {
                 dayAlarms.forEach(a => {
                   const savedAlarm = savedDay.find(sa => sa.id === a.id);
-                  if (savedAlarm !== undefined) {
-                    a.enabled = savedAlarm.enabled;
-                  }
+                  if (savedAlarm !== undefined) a.enabled = savedAlarm.enabled;
                 });
               }
             }
@@ -167,18 +170,12 @@
         return r;
       });
     }
-  } catch(e) {
-    // 恢复出错时继续使用默认数据
-    console.warn('恢复设置失败，已重置为默认', e);
-  }
+  } catch(e) { console.warn('恢复设置失败'); }
 
-  // 保存状态（修复：正确序列化对象）
   function saveFullState() {
     const toSave = regions.map(r => {
       const alarmsCopy = {};
-      for (let day in r.alarms) {
-        alarmsCopy[day] = r.alarms[day].map(a => ({ id: a.id, enabled: a.enabled }));
-      }
+      for (let day in r.alarms) alarmsCopy[day] = r.alarms[day].map(a => ({ id: a.id, enabled: a.enabled }));
       return { id: r.id, enabled: r.enabled, alarms: alarmsCopy };
     });
     localStorage.setItem('regions_full', JSON.stringify(toSave));
@@ -199,77 +196,74 @@
             <span class="alarm-desc">${a.m}</span>
           </div>
         `).join('');
-        return `<div class="day-group">
-          <div class="day-label">${weekNames[week]}</div>
-          ${alarmRows}
-        </div>`;
+        return `<div class="day-group"><div class="day-label">${weekNames[week]}</div>${alarmRows}</div>`;
       }).join('') : '';
       const emptyHtml = !region.enabled ? '<div class="empty-tip">提醒已关闭</div>' : (alarmsHtml === '' ? '<div class="empty-tip">暂无闹钟</div>' : '');
       return `<div class="card">
         <div class="card-header">
-          <div>
-            <div class="card-title">${region.name}</div>
-            <div class="duration-text">${region.duration || '暂未开放'}</div>
-          </div>
-          <label class="switch">
-            <input type="checkbox" ${region.enabled ? 'checked' : ''} onchange="toggleRegion('${region.id}')">
-            <span class="slider"></span>
-          </label>
+          <div><div class="card-title">${region.name}</div><div class="duration-text">${region.duration || '暂未开放'}</div></div>
+          <label class="switch"><input type="checkbox" ${region.enabled ? 'checked' : ''} onchange="toggleRegion('${region.id}')"><span class="slider"></span></label>
         </div>
-        ${alarmsHtml}
-        ${emptyHtml}
+        ${alarmsHtml}${emptyHtml}
       </div>`;
     }).join('');
   }
 
   function renderNotifyStatus() {
     const status = document.getElementById('notifyStatus');
-    if (Notification.permission === 'granted') {
-      status.textContent = '🔔 通知已开启';
-    } else if (Notification.permission === 'denied') {
-      status.textContent = '🔕 通知被拒绝，请在浏览器设置中开启';
-    } else {
-      status.textContent = '🔔 请允许通知以获得闹钟提醒';
-    }
+    if (Notification.permission === 'granted') status.textContent = '🔔 通知已开启';
+    else if (Notification.permission === 'denied') status.textContent = '🔕 通知被拒绝，请在浏览器设置中开启';
+    else status.textContent = '🔔 请允许通知以获得闹钟提醒';
   }
 
-  // ==================== 服务器开关 ====================
+  function updateDebug() {
+    const now = new Date();
+    const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+    document.getElementById('debugInfo').textContent = `当前时间：${timeStr} | 权限：${Notification.permission} | 下一检查：10秒内`;
+  }
+
+  // ==================== 开关 ====================
   function toggleRegion(id) {
     const region = regions.find(r => r.id === id);
-    if (region) {
-      region.enabled = !region.enabled;
-      saveFullState();
-      renderRegions();
-    }
+    if (region) { region.enabled = !region.enabled; saveFullState(); renderRegions(); }
   }
 
-  // ==================== 单个闹钟开关 ====================
   function toggleAlarm(regionId, alarmId, checked) {
     const region = regions.find(r => r.id === regionId);
     if (!region) return;
     for (let day in region.alarms) {
       const alarm = region.alarms[day].find(a => a.id === alarmId);
-      if (alarm) {
-        alarm.enabled = checked;
-        saveFullState();
-        break;
-      }
+      if (alarm) { alarm.enabled = checked; saveFullState(); break; }
     }
   }
 
-  // ==================== 通知权限 ====================
+  // ==================== 通知相关 ====================
   function requestNotification() {
     if (Notification.permission === 'default') {
       Notification.requestPermission().then(perm => {
         renderNotifyStatus();
+        if (perm === 'granted') testNotification(); // 立即发一条测试，确认可用
       });
     }
+    renderNotifyStatus();
   }
-  requestNotification();
-  renderNotifyStatus();
 
-  // ==================== 闹钟检查（每30秒） ====================
-  setInterval(() => {
+  function testNotification() {
+    if (Notification.permission !== 'granted') {
+      alert('请先允许通知权限！点击地址栏锁图标设置。');
+      return;
+    }
+    new Notification('✅ 测试通知成功', {
+      body: '如果你看到这条消息，说明通知功能正常！到设定时间将会自动提醒。',
+      icon: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="40" fill="%23d4af37"/%3E%3C/svg%3E'
+    });
+  }
+
+  // 立即请求权限并更新状态
+  requestNotification();
+
+  // 闹钟检查函数
+  function checkAlarms() {
     if (Notification.permission !== 'granted') return;
     const now = new Date();
     if (now.getTime() >= SEASON_END) return;
@@ -287,7 +281,12 @@
         }
       });
     });
-  }, 30000);
+    updateDebug();
+  }
+
+  // 每10秒检查一次，并立即执行一次
+  setInterval(checkAlarms, 10000);
+  checkAlarms();
 
   // ==================== 复制微信 ====================
   function copyWechat() {
@@ -301,6 +300,8 @@
 
   // 初始渲染
   renderRegions();
+  updateDebug();
+  setInterval(updateDebug, 10000);
 </script>
 </body>
 </html>
