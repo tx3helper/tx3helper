@@ -181,6 +181,9 @@
     localStorage.setItem('regions_full', JSON.stringify(toSave));
   }
 
+  // 防重复弹窗：记录已弹过的闹钟ID+分钟时间戳
+  const lastTriggered = new Map();
+
   // ==================== 渲染 ====================
   function renderRegions() {
     const container = document.getElementById('regions-container');
@@ -207,11 +210,9 @@
         ${alarmsHtml}${emptyHtml}
       </div>`;
     }).join('');
-    // 重新绑定事件（因为 innerHTML 会销毁旧事件）
     bindEvents();
   }
 
-  // 事件绑定
   function bindEvents() {
     document.querySelectorAll('[data-action="toggleRegion"]').forEach(chk => {
       chk.addEventListener('change', function() {
@@ -255,7 +256,7 @@
         body: '通知功能正常！到设定时间会自动提醒。',
       });
     } catch (e) {
-      alert('通知发送失败：' + e.message + '\n请检查系统通知设置或浏览器扩展');
+      alert('通知发送失败：' + e.message);
     }
   }
 
@@ -265,11 +266,24 @@
     if (now.getTime() >= SEASON_END) return;
     const week = now.getDay();
     const currentTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    const minuteKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}-${now.getMinutes()}`;
+
     regions.forEach(region => {
       if (!region.enabled) return;
       const todayAlarms = region.alarms[week] || [];
       todayAlarms.forEach(a => {
         if (a.enabled && a.t === currentTime) {
+          const uniqueKey = `${region.id}-${a.id}-${minuteKey}`;
+          // 如果这一分钟已经弹过，则跳过
+          if (lastTriggered.has(uniqueKey)) return;
+          lastTriggered.set(uniqueKey, true);
+          // 清理过期的键（保留最近 10 分钟）
+          for (const key of lastTriggered.keys()) {
+            if (key.endsWith(minuteKey)) break; // 只清理更早的
+            const parts = key.split('-');
+            if (parts.length > 5) lastTriggered.delete(key);
+          }
+          
           new Notification(`${region.name}：${a.m}`, {
             body: `现在是 ${a.t}，请留意游戏活动。`,
           });
@@ -279,7 +293,6 @@
     updateStatus();
   }
 
-  // 复制微信
   function copyWechat() {
     const wechatId = document.getElementById('wechatId').textContent;
     navigator.clipboard.writeText(wechatId).then(() => {
@@ -290,18 +303,15 @@
   }
 
   // ==================== 初始化 ====================
-  // 权限请求
   if (Notification.permission === 'default') {
     Notification.requestPermission().then(perm => {
       updateStatus();
     });
   }
 
-  // 绑定按钮
   document.getElementById('btnTest').addEventListener('click', sendTestNotification);
   document.getElementById('btnCopy').addEventListener('click', copyWechat);
 
-  // 启动定时检查
   setInterval(checkAlarms, 10000);
   checkAlarms();
   renderRegions();
