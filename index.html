@@ -67,7 +67,7 @@
   <div class="desc-text">平时都有空肝，但是偶尔有事肝不了，又不想包整个赛季怎么办，尽享独特包天服务</div>
   <div class="wechat-row">
     <span class="wechat-id" id="wechatId">tx3xjs</span>
-    <button class="btn-copy" onclick="copyWechat()">复制</button>
+    <button class="btn-copy" id="btnCopy">复制</button>
   </div>
 </div>
 
@@ -76,7 +76,7 @@
 <div class="tip-text">💡 提醒将通过浏览器通知弹出（请允许通知）</div>
 <div class="notify-status" id="notifyStatus"></div>
 <div class="test-area">
-  <button class="btn-test" onclick="testNotification()">🧪 发送测试通知</button>
+  <button class="btn-test" id="btnTest">🧪 发送测试通知</button>
 </div>
 <div class="debug-info" id="debugInfo"></div>
 
@@ -145,7 +145,7 @@
     { id: 'mirror', name: '镜像服', enabled: false, duration: '', alarms: buildMirrorAlarms() }
   ];
 
-  // 从本地存储恢复状态
+  // 恢复状态
   try {
     const saved = localStorage.getItem('regions_full');
     if (saved) {
@@ -170,7 +170,7 @@
         return r;
       });
     }
-  } catch(e) { console.warn('恢复设置失败'); }
+  } catch(e) {}
 
   function saveFullState() {
     const toSave = regions.map(r => {
@@ -191,7 +191,7 @@
         const alarmRows = dayAlarms.map(a => `
           <div class="alarm-row">
             <input class="alarm-check" type="checkbox" ${a.enabled ? 'checked' : ''} 
-                   onchange="toggleAlarm('${region.id}', ${a.id}, this.checked)">
+                   data-action="toggleAlarm" data-region="${region.id}" data-alarmid="${a.id}">
             <span class="alarm-time">${a.t}</span>
             <span class="alarm-desc">${a.m}</span>
           </div>
@@ -202,67 +202,63 @@
       return `<div class="card">
         <div class="card-header">
           <div><div class="card-title">${region.name}</div><div class="duration-text">${region.duration || '暂未开放'}</div></div>
-          <label class="switch"><input type="checkbox" ${region.enabled ? 'checked' : ''} onchange="toggleRegion('${region.id}')"><span class="slider"></span></label>
+          <label class="switch"><input type="checkbox" ${region.enabled ? 'checked' : ''} data-action="toggleRegion" data-region="${region.id}"><span class="slider"></span></label>
         </div>
         ${alarmsHtml}${emptyHtml}
       </div>`;
     }).join('');
+    // 重新绑定事件（因为 innerHTML 会销毁旧事件）
+    bindEvents();
   }
 
-  function renderNotifyStatus() {
+  // 事件绑定
+  function bindEvents() {
+    document.querySelectorAll('[data-action="toggleRegion"]').forEach(chk => {
+      chk.addEventListener('change', function() {
+        const regionId = this.dataset.region;
+        const region = regions.find(r => r.id === regionId);
+        if (region) { region.enabled = this.checked; saveFullState(); renderRegions(); }
+      });
+    });
+    document.querySelectorAll('[data-action="toggleAlarm"]').forEach(chk => {
+      chk.addEventListener('change', function() {
+        const regionId = this.dataset.region;
+        const alarmId = Number(this.dataset.alarmid);
+        const region = regions.find(r => r.id === regionId);
+        if (region) {
+          for (let day in region.alarms) {
+            const alarm = region.alarms[day].find(a => a.id === alarmId);
+            if (alarm) { alarm.enabled = this.checked; saveFullState(); break; }
+          }
+        }
+      });
+    });
+  }
+
+  function updateStatus() {
     const status = document.getElementById('notifyStatus');
     if (Notification.permission === 'granted') status.textContent = '🔔 通知已开启';
     else if (Notification.permission === 'denied') status.textContent = '🔕 通知被拒绝，请在浏览器设置中开启';
     else status.textContent = '🔔 请允许通知以获得闹钟提醒';
-  }
-
-  function updateDebug() {
     const now = new Date();
-    const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
-    document.getElementById('debugInfo').textContent = `当前时间：${timeStr} | 权限：${Notification.permission} | 下一检查：10秒内`;
+    document.getElementById('debugInfo').textContent = `当前时间：${now.toLocaleTimeString()} | 权限：${Notification.permission}`;
   }
 
-  // ==================== 开关 ====================
-  function toggleRegion(id) {
-    const region = regions.find(r => r.id === id);
-    if (region) { region.enabled = !region.enabled; saveFullState(); renderRegions(); }
-  }
-
-  function toggleAlarm(regionId, alarmId, checked) {
-    const region = regions.find(r => r.id === regionId);
-    if (!region) return;
-    for (let day in region.alarms) {
-      const alarm = region.alarms[day].find(a => a.id === alarmId);
-      if (alarm) { alarm.enabled = checked; saveFullState(); break; }
-    }
-  }
-
-  // ==================== 通知相关 ====================
-  function requestNotification() {
-    if (Notification.permission === 'default') {
-      Notification.requestPermission().then(perm => {
-        renderNotifyStatus();
-        if (perm === 'granted') testNotification(); // 立即发一条测试，确认可用
-      });
-    }
-    renderNotifyStatus();
-  }
-
-  function testNotification() {
+  // ==================== 通知功能 ====================
+  function sendTestNotification() {
     if (Notification.permission !== 'granted') {
-      alert('请先允许通知权限！点击地址栏锁图标设置。');
+      alert('通知权限未开启！请点击地址栏锁图标，将通知设为“允许”');
       return;
     }
-    new Notification('✅ 测试通知成功', {
-      body: '如果你看到这条消息，说明通知功能正常！到设定时间将会自动提醒。',
-      icon: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="40" fill="%23d4af37"/%3E%3C/svg%3E'
-    });
+    try {
+      new Notification('✅ 测试通知成功', {
+        body: '通知功能正常！到设定时间会自动提醒。',
+      });
+    } catch (e) {
+      alert('通知发送失败：' + e.message + '\n请检查系统通知设置或浏览器扩展');
+    }
   }
 
-  // 立即请求权限并更新状态
-  requestNotification();
-
-  // 闹钟检查函数
   function checkAlarms() {
     if (Notification.permission !== 'granted') return;
     const now = new Date();
@@ -276,19 +272,14 @@
         if (a.enabled && a.t === currentTime) {
           new Notification(`${region.name}：${a.m}`, {
             body: `现在是 ${a.t}，请留意游戏活动。`,
-            icon: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="40" fill="%23d4af37"/%3E%3C/svg%3E'
           });
         }
       });
     });
-    updateDebug();
+    updateStatus();
   }
 
-  // 每10秒检查一次，并立即执行一次
-  setInterval(checkAlarms, 10000);
-  checkAlarms();
-
-  // ==================== 复制微信 ====================
+  // 复制微信
   function copyWechat() {
     const wechatId = document.getElementById('wechatId').textContent;
     navigator.clipboard.writeText(wechatId).then(() => {
@@ -298,10 +289,24 @@
     });
   }
 
-  // 初始渲染
+  // ==================== 初始化 ====================
+  // 权限请求
+  if (Notification.permission === 'default') {
+    Notification.requestPermission().then(perm => {
+      updateStatus();
+    });
+  }
+
+  // 绑定按钮
+  document.getElementById('btnTest').addEventListener('click', sendTestNotification);
+  document.getElementById('btnCopy').addEventListener('click', copyWechat);
+
+  // 启动定时检查
+  setInterval(checkAlarms, 10000);
+  checkAlarms();
   renderRegions();
-  updateDebug();
-  setInterval(updateDebug, 10000);
+  updateStatus();
+  setInterval(updateStatus, 10000);
 </script>
 </body>
 </html>
